@@ -1,0 +1,1569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binance Triangular Arbitrage</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.0.0/dist/tf.min.js"></script>
+    <style>
+         :root {
+            --primary: #1e1e2e;
+            --secondary: #252537;
+            --accent: #6c5ce7;
+            --text: #f8f8f2;
+            --success: #50fa7b;
+            --warning: #f1fa8c;
+            --error: #ff5555;
+            --border: #44475a;
+            --scanner-accent: #00ffcc;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: var(--primary);
+            color: var(--text);
+            padding: 20px;
+        }
+        
+        h2 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 28px;
+            color: var(--scanner-accent);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 12px 24px;
+            cursor: pointer;
+            font-size: 16px;
+            color: var(--text);
+            transition: all 0.3s;
+        }
+        
+        .tab-btn.active {
+            background-color: rgba(108, 92, 231, 0.2);
+            color: var(--accent);
+            border-bottom: 2px solid var(--accent);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .panel {
+            background-color: var(--secondary);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .panel-title {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+            color: var(--accent);
+        }
+        
+        .balance-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+        }
+        
+        .balance-item {
+            background-color: rgba(108, 92, 231, 0.1);
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        
+        .balance-asset {
+            font-weight: bold;
+            color: var(--accent);
+        }
+        
+        .balance-amount {
+            font-size: 0.9rem;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+            color: #bd93f9;
+        }
+        
+        input {
+            width: 100%;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #282a36;
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+        
+        button {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+            transition: background-color 0.3s;
+            margin-top: 10px;
+        }
+        
+        button:hover {
+            background-color: #5b4dca;
+        }
+        
+        button:disabled {
+            background-color: #44475a;
+            cursor: not-allowed;
+        }
+        
+        .status-panel {
+            grid-column: 1 / -1;
+        }
+        
+        .log-container {
+            background-color: #282a36;
+            border-radius: 5px;
+            padding: 15px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.9rem;
+            margin-top: 10px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-radius: 3px;
+        }
+        
+        .log-entry.info {
+            background-color: rgba(98, 114, 164, 0.2);
+        }
+        
+        .log-entry.success {
+            background-color: rgba(80, 250, 123, 0.1);
+            color: var(--success);
+        }
+        
+        .log-entry.error {
+            background-color: rgba(255, 85, 85, 0.1);
+            color: var(--error);
+        }
+        
+        .step-indicator {
+            padding: 10px;
+            background-color: rgba(98, 114, 164, 0.2);
+            border-radius: 5px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        
+        .price-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        
+        .pair-example {
+            font-size: 0.8rem;
+            color: #bd93f9;
+            margin-top: 5px;
+        }
+        
+        .asset-flow {
+            background-color: #44475a;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 10px;
+            font-size: 0.9rem;
+        }
+        
+        .flow-step {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .flow-arrow {
+            margin: 0 10px;
+            font-size: 1.2rem;
+        }
+        
+        .order-status-panel {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border);
+        }
+        
+        .order-item {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            background-color: rgba(98, 114, 164, 0.2);
+        }
+        
+        .order-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+        
+        .order-status {
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.8rem;
+        }
+        
+        .status-pending {
+            background-color: rgba(241, 250, 140, 0.2);
+            color: var(--warning);
+        }
+        
+        .status-partial {
+            background-color: rgba(255, 184, 108, 0.2);
+            color: #ffb86c;
+        }
+        
+        .status-filled {
+            background-color: rgba(80, 250, 123, 0.2);
+            color: var(--success);
+        }
+        
+        .order-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .control-btn {
+            padding: 8px 15px;
+            width: auto;
+        }
+        
+        .btn-pause {
+            background-color: #ffb86c;
+        }
+        
+        .btn-resume {
+            background-color: #50fa7b;
+        }
+        
+        .btn-cancel {
+            background-color: #ff5555;
+        }
+        
+        /* Scanner styles */
+        .scanner-panel {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .controls {
+            margin: 15px 0;
+            text-align: center;
+        }
+        
+        .scanner-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: rgba(25, 25, 25, 0.9);
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
+            margin: 20px auto;
+        }
+        
+        .scanner-table th, 
+        .scanner-table td {
+            padding: 12px;
+            border: 1px solid rgba(0, 255, 204, 0.2);
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .scanner-table th {
+            background: rgba(0, 255, 204, 0.2);
+            color: var(--scanner-accent);
+            cursor: pointer;
+        }
+        
+        .scanner-table tr:hover {
+            background: rgba(0, 255, 204, 0.1);
+        }
+        
+        .profitable {
+            background: linear-gradient(45deg, var(--scanner-accent), #0099ff);
+            color: #fff;
+        }
+        
+        .badge-high {
+            background: var(--scanner-accent);
+            color: #000;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        
+        .badge-low {
+            background: var(--error);
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(0, 255, 204, 0.3);
+            border-top: 4px solid var(--scanner-accent);
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-left: 10px;
+        }
+        
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        
+        .error {
+            color: var(--error);
+            font-size: 16px;
+            margin-top: 10px;
+            text-align: center;
+        }
+        
+        .scanner-chart {
+            max-width: 600px;
+            margin: 30px auto;
+            background: #121212;
+            border-radius: 10px;
+        }
+        
+        a.pair-link {
+            color: var(--scanner-accent);
+            text-decoration: none;
+        }
+        
+        a.pair-link:hover {
+            text-decoration: underline;
+        }
+        
+        .scanner-table tr.clickable {
+            cursor: pointer;
+        }
+        
+        .scanner-table tr.clickable:hover {
+            background: rgba(0, 255, 204, 0.3) !important;
+        }
+        
+        .execute-btn {
+            background: var(--scanner-accent);
+            color: #000;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .execute-btn:hover {
+            background: #00ccaa;
+        }
+        
+        .score-badge {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        
+        .score-high {
+            background: #50fa7b;
+            color: #000;
+        }
+        
+        .score-medium {
+            background: #f1fa8c;
+            color: #000;
+        }
+        
+        .score-low {
+            background: #ff5555;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <h2>🚀 Binance Triangular Arbitrage Bot</h2>
+    
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="scanner">Opportunity Scanner</button>
+        <button class="tab-btn" data-tab="executor">Execute Arbitrage</button>
+    </div>
+    
+    <!-- Scanner Tab -->
+    <div id="scanner" class="tab-content active">
+        <div class="scanner-panel">
+            <div class="controls">
+                <label>Filter: <input type="text" id="filterInput" placeholder="e.g. BTCUSDT"></label>
+                <button id="autoExecuteBtn">Enable Auto Execute</button>
+                <button id="clearExecutedBtn" style="background-color: #ff5555;">Clear Executed History</button>
+            </div>
+            <p>Scanning...<span id="loadingSpinner" class="spinner"></span></p>
+
+            <table class="scanner-table" id="arbitrageTable" data-sort-dir="desc">
+                <thead>
+                    <tr>
+                        <th data-col="0">Opportunity</th>
+                        <th data-col="1">Profit (%)</th>
+                        <th data-col="2">Status</th>
+                        <th data-col="3">Liquidity</th>
+                        <th data-col="4">Exec Prices</th>
+                        <th data-col="5">AI Score</th>
+                        <th data-col="6">Execution Score</th>
+                        <th data-col="7">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="results">
+                    <tr><td colspan="8">Loading...</td></tr>
+                </tbody>
+            </table>
+
+            <canvas class="scanner-chart" id="profitChart"></canvas>
+            <p id="errorMessage" class="error"></p>
+        </div>
+    </div>
+    
+    <!-- Executor Tab -->
+    <div id="executor" class="tab-content">
+        <div class="container">
+            <div class="panel">
+                <h2 class="panel-title">Account Balances</h2>
+                <div class="balance-grid" id="balanceContainer">
+                    <!-- Balances will be populated here -->
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h2 class="panel-title">Arbitrage Setup</h2>
+                <div class="form-group">
+                    <label for="pair1">First Pair (Buy with USDT)</label>
+                    <input type="text" id="pair1" placeholder="e.g., ZKUSDT">
+                    <div class="pair-example">Format: ASSETUSDT (e.g., ZKUSDT, BTCUSDT)</div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="pair2">Second Pair (Trade)</label>
+                    <input type="text" id="pair2" placeholder="e.g., ZKBTC">
+                    <div class="pair-example">Format: ASSET1ASSET2 (e.g., ZKBTC, ETHBTC)</div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="pair3">Third Pair (Sell for USDT)</label>
+                    <input type="text" id="pair3" placeholder="e.g., BTCUSDT">
+                    <div class="pair-example">Format: ASSETUSDT (e.g., BTCUSDT, ETHUSDT)</div>
+                </div>
+                
+                <div class="price-row">
+                    <div class="form-group">
+                        <label for="price1">Buy Price (First Pair)</label>
+                        <input type="number" id="price1" step="0.000001" placeholder="Enter price">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="price2">Trade Price (Second Pair)</label>
+                        <input type="number" id="price2" step="0.00000001" placeholder="Enter price">
+                    </div>
+                </div>
+                
+                <div class="price-row">
+                    <div class="form-group">
+                        <label for="price3">Sell Price (Third Pair)</label>
+                        <input type="number" id="price3" step="0.000001" placeholder="Enter price">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="usdtAmount">USDT Amount</label>
+                    <input type="number" id="usdtAmount" value="100" step="0.01">
+                </div>
+                
+                <div class="asset-flow" id="assetFlow">
+                    <div class="flow-step">
+                        <span id="asset1">USDT</span>
+                        <span class="flow-arrow">→</span>
+                        <span id="asset2">ASSET1</span>
+                        <span class="flow-arrow">→</span>
+                        <span id="asset3">ASSET2</span>
+                        <span class="flow-arrow">→</span>
+                        <span id="asset4">USDT</span>
+                    </div>
+                </div>
+                
+                <button id="executeBtn">Execute Arbitrage</button>
+            </div>
+            
+            <div class="panel status-panel">
+                <h2 class="panel-title">Execution Status</h2>
+                <div class="step-indicator" id="stepIndicator">Ready to execute</div>
+                
+                <div class="control-panel" id="controlPanel" style="display: none;">
+                    <div class="order-actions">
+                        <button id="pauseBtn" class="control-btn btn-pause">Pause Execution</button>
+                        <button id="resumeBtn" class="control-btn btn-resume" style="display: none;">Resume Execution</button>
+                        <button id="cancelOrderBtn" class="control-btn btn-cancel">Cancel Current Order</button>
+                    </div>
+                </div>
+                
+                <div class="log-container" id="logContainer">
+                    <!-- Logs will appear here -->
+                </div>
+                
+                <div class="order-status-panel" id="orderStatusPanel" style="display: none;">
+                    <h3>Active Orders</h3>
+                    <div id="activeOrders">
+                        <!-- Active orders will appear here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Global variables
+        let aiModel;
+        let profitChart;
+        const marketData = new Map();
+        let lastExec = 0;
+        let scannerActive = true;
+        let autoExecuteEnabled = false;
+        const executedOpportunities = new Set();
+        let autoExecutionInterval;
+        let isExecutingTrade = false;
+
+        // Initialize the application
+        function init() {
+            // Load auto-execute state from localStorage
+            const savedState = localStorage.getItem('autoExecuteEnabled');
+            if (savedState === 'true') {
+                autoExecuteEnabled = true;
+                // Update button state but don't start execution yet
+                const btn = document.getElementById('autoExecuteBtn');
+                btn.textContent = 'Stop Auto Execute';
+                btn.style.backgroundColor = '#50fa7b';
+            }
+            
+            setupEventListeners();
+            setupTabSwitching();
+            loadModel();
+            connectWebSocket();
+            setupExecutor();
+            
+            // If auto-execute was enabled, start it after initialization
+            if (autoExecuteEnabled) {
+                startAutoExecution();
+            }
+        }
+
+        // Set up event listeners
+        function setupEventListeners() {
+            // Sortable columns
+            document.querySelectorAll('th[data-col]').forEach(th => {
+                th.addEventListener('click', () => sortTable(parseInt(th.dataset.col)));
+            });
+
+            // Filter rows
+            document.getElementById('filterInput').addEventListener('input', debounce(e => {
+                const term = e.target.value.trim().toUpperCase();
+                document.querySelectorAll('#results tr').forEach(r => {
+                    const txt = r.cells[0]?.innerText.toUpperCase() || '';
+                    r.style.display = txt.includes(term) ? '' : 'none';
+                });
+            }, 300));
+
+            // Auto execute button
+            document.getElementById('autoExecuteBtn').addEventListener('click', toggleAutoExecute);
+            
+            // Clear executed history button
+            document.getElementById('clearExecutedBtn').addEventListener('click', clearExecutedHistory);
+        }
+
+        // Clear executed opportunities history
+        function clearExecutedHistory() {
+            executedOpportunities.clear();
+            localStorage.removeItem('executedOpportunities');
+            localStorage.removeItem('executedOpportunitiesTimes');
+            alert('Executed opportunities history cleared!');
+        }
+
+        // Toggle auto execution
+        function toggleAutoExecute() {
+            autoExecuteEnabled = !autoExecuteEnabled;
+            const btn = document.getElementById('autoExecuteBtn');
+            btn.textContent = autoExecuteEnabled ? 
+                'Stop Auto Execute' : 
+                'Enable Auto Execute';
+            btn.style.backgroundColor = autoExecuteEnabled ? '#50fa7b' : '#6c5ce7';
+            
+            // Save state to localStorage
+            localStorage.setItem('autoExecuteEnabled', autoExecuteEnabled.toString());
+            
+            if (autoExecuteEnabled) {
+                // Start auto execution loop
+                startAutoExecution();
+            } else {
+                // Stop auto execution loop
+                stopAutoExecution();
+            }
+        }
+
+        // Start auto execution loop
+        function startAutoExecution() {
+            if (autoExecutionInterval) {
+                clearInterval(autoExecutionInterval);
+            }
+            
+            // Load previously executed opportunities from localStorage
+            const savedOpportunities = localStorage.getItem('executedOpportunities');
+            if (savedOpportunities) {
+                const opportunities = JSON.parse(savedOpportunities);
+                opportunities.forEach(key => executedOpportunities.add(key));
+            }
+            
+            autoExecutionInterval = setInterval(async () => {
+                if (!autoExecuteEnabled || isExecutingTrade) return;
+                
+                // Find and score all valid opportunities
+                const validOpportunities = Array.from(document.querySelectorAll('#results tr.clickable'));
+                const scoredOpportunities = [];
+                
+                for (const row of validOpportunities) {
+                    const pairs = row.cells[0].innerText.split(' → ').map(pair => 
+                        pair.replace('USDT', '').replace(/\(.*\)/, '').trim()
+                    );
+                    
+                    const key = `${pairs[0]}USDT-${pairs[0]}${pairs[1]}-${pairs[1]}USDT`;
+                    
+                    // Skip if already executed recently (within last 5 minutes)
+                    const executedTime = parseInt(localStorage.getItem(`executed_${key}_time`) || 0);
+                    if (executedTime && Date.now() - executedTime < 300000) { // 5 minutes
+                        continue;
+                    }
+                    
+                    // Get the execute button
+                    const executeBtn = row.querySelector('.execute-btn');
+                    if (executeBtn) {
+                        // Extract the opportunity data
+                        const op = {
+                            usdtPair: executeBtn.dataset.pair1,
+                            secondPair: executeBtn.dataset.pair2,
+                            thirdPair: executeBtn.dataset.pair3
+                        };
+                        
+                        const prices = [
+                            parseFloat(executeBtn.dataset.price1),
+                            parseFloat(executeBtn.dataset.price2),
+                            parseFloat(executeBtn.dataset.price3)
+                        ];
+                        
+                        // Calculate execution score
+                        const score = await calculateExecutionScore(op, prices, row);
+                        
+                        scoredOpportunities.push({
+                            op,
+                            prices,
+                            row,
+                            score,
+                            key
+                        });
+                    }
+                }
+                
+                // Sort by score (highest first) and execute the best opportunity
+                if (scoredOpportunities.length > 0) {
+                    scoredOpportunities.sort((a, b) => b.score - a.score);
+                    const bestOpportunity = scoredOpportunities[0];
+                    
+                    // Only execute if score is above threshold (e.g., 50)
+                    if (bestOpportunity.score > 50) {
+                        // Execute this opportunity with 10 USDT
+                        autoExecuteOpportunity(bestOpportunity.op, bestOpportunity.prices);
+                        
+                        // Mark as executed with timestamp
+                        executedOpportunities.add(bestOpportunity.key);
+                        localStorage.setItem(`executed_${bestOpportunity.key}_time`, Date.now().toString());
+                        
+                        // Save executed opportunities to localStorage
+                        localStorage.setItem('executedOpportunities', JSON.stringify(Array.from(executedOpportunities)));
+                        
+                        isExecutingTrade = true;
+                    }
+                }
+            }, 3000); // Check every 3 seconds
+        }
+
+        // Calculate execution score for an opportunity
+        async function calculateExecutionScore(op, prices, row) {
+            let score = 0;
+            
+            // 1. Profit percentage (higher is better)
+            const profitPercent = parseFloat(row.cells[1].innerText);
+            score += profitPercent * 2; // Weight profit highly
+            
+            // 2. Liquidity score (higher liquidity = better execution)
+            const liquidityText = row.cells[3].innerText;
+            const [liq1, liq2, liq3] = liquidityText.split('/').map(parseFloat);
+            const minLiquidity = Math.min(liq1, liq2, liq3);
+            score += minLiquidity * 0.1; // Add liquidity factor
+            
+            // 3. Recent price stability (check if prices are still valid)
+            try {
+                const response = await fetch('/check_price_stability', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        pairs: [op.usdtPair, op.secondPair, op.thirdPair],
+                        prices: prices
+                    })
+                });
+                
+                const stabilityData = await response.json();
+                if (stabilityData.stable) {
+                    score += 20; // Bonus for stable prices
+                }
+            } catch (error) {
+                console.error('Error checking price stability:', error);
+            }
+            
+            // 4. Trading volume (higher volume = better execution)
+            try {
+                const volumeResponse = await fetch('/get_trading_volume', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        pairs: [op.usdtPair, op.secondPair, op.thirdPair]
+                    })
+                });
+                
+                const volumeData = await volumeResponse.json();
+                const minVolume = Math.min(...Object.values(volumeData));
+                score += minVolume * 0.001; // Add volume factor
+            } catch (error) {
+                console.error('Error getting trading volume:', error);
+            }
+            
+            // 5. AI prediction score (if available)
+            const aiScore = parseInt(row.cells[5].innerText) || 0;
+            score += aiScore * 0.5; // Add AI prediction factor
+            
+            // 6. Order book depth (check for sufficient depth)
+            try {
+                const depthResponse = await fetch('/get_orderbook_depth', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        pairs: [op.usdtPair, op.secondPair, op.thirdPair],
+                        limit: 3
+                    })
+                });
+                
+                const depthData = await depthResponse.json();
+                
+                // Check if order books have sufficient depth for 10 USDT trade
+                const sufficientDepth = Object.values(depthData).every((book, idx) => {
+                    const requiredAmount = idx === 2 ? 10 / prices[idx] : 10; // For sell orders, we need asset amount
+                    const available = idx === 2 ? 
+                        parseFloat(book.bids[0][1]) : // For sell orders, use bid quantity
+                        parseFloat(book.asks[0][1]) * parseFloat(book.asks[0][0]); // For buy orders, use ask quantity * price
+                    
+                    return available >= requiredAmount * 1.5; // 50% buffer
+                });
+                
+                if (sufficientDepth) {
+                    score += 15; // Bonus for sufficient depth
+                }
+            } catch (error) {
+                console.error('Error getting order book depth:', error);
+            }
+            
+            return Math.round(score);
+        }
+
+        // Auto-execute an opportunity
+        function autoExecuteOpportunity(op, prices) {
+            // Check if an arbitrage is already running
+            fetch('/arbitrage_status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.running) {
+                        console.log('Arbitrage is already running. Skipping auto-execute.');
+                        return;
+                    }
+                    
+                    // Auto-execute with 10 USDT
+                    fetch('/execute_arbitrage', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            pairs: [op.usdtPair, op.secondPair, op.thirdPair],
+                            usdt_amount: 10,  // Fixed 10 USDT for auto-execute
+                            price1: prices[0],
+                            price2: prices[1],
+                            price3: prices[2]
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            console.log('Auto-execute started successfully');
+                            
+                            // Switch to executor tab to show progress
+                            document.querySelector('.tab-btn[data-tab="executor"]').click();
+                            
+                            // Start monitoring status
+                            updateExecutionStatus();
+                        } else {
+                            console.error('Auto-execute failed:', data.message);
+                            isExecutingTrade = false;
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Auto-execute error:', error);
+                        isExecutingTrade = false;
+                    });
+                });
+        }
+
+        // Stop auto execution loop
+        function stopAutoExecution() {
+            if (autoExecutionInterval) {
+                clearInterval(autoExecutionInterval);
+                autoExecutionInterval = null;
+            }
+        }
+
+        // Setup tab switching
+        function setupTabSwitching() {
+            const tabBtns = document.querySelectorAll('.tab-btn');
+            tabBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    // Update active tab
+                    tabBtns.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    
+                    // Show selected tab content
+                    document.querySelectorAll('.tab-content').forEach(tab => {
+                        tab.classList.remove('active');
+                    });
+                    document.getElementById(btn.dataset.tab).classList.add('active');
+                    
+                    // Pause scanner when not active
+                    scannerActive = (btn.dataset.tab === 'scanner');
+                });
+            });
+        }
+
+        // Debounce helper
+        function debounce(fn, delay) { 
+            let timer; 
+            return (...args) => { 
+                clearTimeout(timer); 
+                timer = setTimeout(() => fn(...args), delay); 
+            }; 
+        }
+
+        // Sortable columns
+        function sortTable(col) {
+            const table = document.getElementById('arbitrageTable');
+            const rows = Array.from(table.tBodies[0].rows);
+            const dir = table.getAttribute('data-sort-dir') === 'asc' ? 'desc' : 'asc';
+            rows.sort((a, b) => {
+                const x = a.cells[col].innerText.trim();
+                const y = b.cells[col].innerText.trim();
+                const nx = parseFloat(x), ny = parseFloat(y);
+                const cmp = !isNaN(nx) && !isNaN(ny) ? nx - ny : x.localeCompare(y);
+                return dir === 'asc' ? cmp : -cmp;
+            });
+            const tbody = table.tBodies[0]; 
+            tbody.innerHTML = ''; 
+            rows.forEach(r => tbody.appendChild(r));
+            table.setAttribute('data-sort-dir', dir);
+        }
+
+        // AI Model
+        async function loadModel() {
+            try { 
+                aiModel = await tf.loadLayersModel('https://example.com/model.json'); 
+            }
+            catch (err) { 
+                console.warn('AI model load failed', err); 
+            }
+        }
+
+        async function predictScore(features) {
+            if (!aiModel) return 0;
+            const input = tf.tensor2d([features]);
+            const out = aiModel.predict(input);
+            const score = (await out.data())[0];
+            return Math.round(score * 100);
+        }
+
+        // Profit chart
+        function updateProfitChart(profits) {
+            const ctx = document.getElementById('profitChart').getContext('2d');
+            if (!profitChart) {
+                profitChart = new Chart(ctx, { 
+                    type: 'line', 
+                    data: { 
+                        labels: [], 
+                        datasets: [{ 
+                            label: 'Max Profit (%)', 
+                            data: [],
+                            borderColor: '#00ffcc',
+                            backgroundColor: 'rgba(0, 255, 204, 0.1)',
+                            borderWidth: 2
+                        }] 
+                    }, 
+                    options: { 
+                        responsive: true, 
+                        scales: { 
+                            y: { 
+                                beginAtZero: true,
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.1)'
+                                }
+                            },
+                            x: {
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.1)'
+                                }
+                            }
+                        } 
+                    } 
+                });
+            }
+            profitChart.data.labels.push(new Date().toLocaleTimeString());
+            profitChart.data.datasets[0].data.push(Math.max(...profits, 0));
+            profitChart.update();
+        }
+
+        // Validate top-of-book price only
+        async function validateOpportunityWithDepth(op) {
+            try {
+                const [u, s, t] = await Promise.all([
+                    fetch(`https://api.binance.com/api/v3/depth?symbol=${op.usdtPair}&limit=5`).then(r => r.json()),
+                    fetch(`https://api.binance.com/api/v3/depth?symbol=${op.secondPair}&limit=5`).then(r => r.json()),
+                    fetch(`https://api.binance.com/api/v3/depth?symbol=${op.thirdPair}&limit=5`).then(r => r.json())
+                ]);
+                const ask1 = +u.asks[0][0], ask2 = +s.asks[0][0], bid3 = +t.bids[0][0];
+                const vol1 = +u.asks[0][1], vol2 = +s.asks[0][1], vol3 = +t.bids[0][1];
+                const d1 = marketData.get(op.usdtPair).ask;
+                const d2 = marketData.get(op.secondPair).ask;
+                const d3 = marketData.get(op.thirdPair).bid;
+                return { 
+                    isValid: ask1 === d1 && ask2 === d2 && bid3 === d3, 
+                    usdtLiquidity: vol1, 
+                    secondLiquidity: vol2, 
+                    thirdLiquidity: vol3, 
+                    desiredPrices: [d1, d2, d3] 
+                };
+            } catch (err) { 
+                console.error('Depth validation error:', err); 
+                return { 
+                    isValid: false, 
+                    usdtLiquidity: 0, 
+                    secondLiquidity: 0, 
+                    thirdLiquidity: 0, 
+                    desiredPrices: [0,0,0] 
+                }; 
+            }
+        }
+
+        // Show errors
+        function displayError(msg) { 
+            document.getElementById('errorMessage').innerText = msg; 
+        }
+
+        // WebSocket + worker setup
+        function connectWebSocket() {
+            const ws = new WebSocket('wss://stream.binance.com:9443/ws/!ticker@arr');
+            
+            ws.onmessage = e => {
+                if (!scannerActive) return;
+                
+                try {
+                    const ticks = JSON.parse(e.data);
+                    ticks.forEach(t => marketData.set(t.s, { ask:+t.a, bid:+t.b }));
+                    if (Date.now() - lastExec > 300) {
+                        lastExec = Date.now();
+                        arbitrageWorker.postMessage({ 
+                            marketData: Array.from(marketData, ([sym, v]) => ({ 
+                                symbol: sym, 
+                                ask: v.ask, 
+                                bid: v.bid 
+                            })) 
+                        });
+                    }
+                } catch (err) { 
+                    displayError('Data error: '+err.message); 
+                }
+            };
+            
+            ws.onerror = () => { 
+                displayError('WebSocket error. Reconnecting...'); 
+                setTimeout(connectWebSocket, 5000); 
+            };
+        }
+
+        // Create Web Worker
+        const arbitrageWorker = new Worker(URL.createObjectURL(new Blob([`
+            self.onmessage = e => {
+                const d = e.data.marketData;
+                const opps = [];
+                
+                for (const t of d) {
+                    if (!t.symbol.endsWith('USDT')) continue;
+                    const c = t.symbol.replace('USDT','');
+                    
+                    for (const s of d) {
+                        if (!s.symbol.startsWith(c) || s.symbol.endsWith('USDT')) continue;
+                        const n = d.find(x => x.symbol === s.symbol.replace(c,'')+'USDT');
+                        if (!n) continue;
+                        
+                        const tot = (1/t.ask) * s.ask * n.bid;
+                        const p = (tot-1)*100 - 0.3;
+                        
+                        if (p > 0) {
+                            opps.push({
+                                usdtPair: t.symbol,
+                                secondPair: s.symbol,
+                                thirdPair: n.symbol,
+                                profitPercent: p
+                            });
+                        }
+                    }
+                }
+                
+                postMessage({ opportunities: opps });
+            };
+        `], { type: 'application/javascript' })));
+
+        // Handle opportunities without removal
+        arbitrageWorker.onmessage = async e => {
+            if (!scannerActive) return;
+            
+            const ops = e.data.opportunities;
+            const profits = [];
+            
+            for (const op of ops) {
+                await displayRow(op);
+                profits.push(op.profitPercent);
+            }
+            
+            if (profits.length) updateProfitChart(profits);
+            document.getElementById('loadingSpinner').style.display = 'none';
+        };
+
+        // Create or update a row, but never remove
+        async function displayRow(op) {
+            const tbody = document.getElementById('results');
+            const id = `opportunity-${op.usdtPair}-${op.secondPair}-${op.thirdPair}`;
+            let row = document.getElementById(id);
+            const det = await validateOpportunityWithDepth(op);
+            const aiScore = await predictScore([op.profitPercent, det.usdtLiquidity, det.secondLiquidity, det.thirdLiquidity]);
+            
+            // Calculate execution score
+            const executionScore = await calculateExecutionScore(op, det.desiredPrices, {
+                cells: [
+                    { innerText: '' }, // dummy cell 0
+                    { innerText: op.profitPercent.toFixed(2) }, // cell 1 - profit
+                    { innerText: '' }, // dummy cell 2
+                    { innerText: `${det.usdtLiquidity}/${det.secondLiquidity}/${det.thirdLiquidity}` }, // cell 3 - liquidity
+                    { innerText: '' }, // dummy cell 4
+                    { innerText: aiScore.toString() } // cell 5 - AI score
+                ]
+            });
+            
+            const status = det.isValid ? '<span class="badge-high">Valid</span>' : '<span class="badge-low">Mismatch</span>';
+            const prices = det.desiredPrices.join(' / ');
+            const liq = `${det.usdtLiquidity}/${det.secondLiquidity}/${det.thirdLiquidity}`;
+            const linkTemplate = symbol => {
+                const pair = symbol.replace(/USDT$/,'_USDT');
+                return `https://www.binance.com/en/trade/${pair}?type=spot`;
+            };
+            
+            // Determine execution score badge class
+            let scoreClass = 'score-low';
+            if (executionScore > 70) scoreClass = 'score-high';
+            else if (executionScore > 40) scoreClass = 'score-medium';
+
+            if (!row) {
+                row = document.createElement('tr');
+                row.id = id;
+                tbody.appendChild(row);
+            }
+            
+            row.className = det.isValid ? 'profitable' : '';
+            row.innerHTML = `
+                <td>
+                    <a class="pair-link" href="${linkTemplate(op.usdtPair)}" target="_blank">${op.usdtPair}</a> →
+                    <a class="pair-link" href="${linkTemplate(op.secondPair)}" target="_blank">${op.secondPair}</a> →
+                    <a class="pair-link" href="${linkTemplate(op.thirdPair)}" target="_blank">${op.thirdPair}</a>
+                </td>
+                <td>${op.profitPercent.toFixed(2)}</td>
+                <td>${status}</td>
+                <td>${liq}</td>
+                <td>${prices}</td>
+                <td>${aiScore}</td>
+                <td><span class="score-badge ${scoreClass}">${executionScore}</span></td>
+                <td>
+                    ${det.isValid ? `<button class="execute-btn" data-pair1="${op.usdtPair}" data-pair2="${op.secondPair}" data-pair3="${op.thirdPair}" data-price1="${det.desiredPrices[0]}" data-price2="${det.desiredPrices[1]}" data-price3="${det.desiredPrices[2]}">Execute</button>` : 'N/A'}
+                </td>
+            `;
+            
+            // Make row clickable if valid
+            if (det.isValid) {
+                row.classList.add('clickable');
+                row.addEventListener('click', (e) => {
+                    // If the click is on the button, we let the button handler do its job
+                    if (e.target.tagName !== 'BUTTON') {
+                        fillFormAndSwitch(op, det.desiredPrices);
+                    }
+                });
+
+                // Add event listener to the execute button
+                const executeBtn = row.querySelector('.execute-btn');
+                if (executeBtn) {
+                    executeBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        executeOpportunity(op, det.desiredPrices);
+                    });
+                }
+            }
+        }
+
+        // Fill the form and switch to executor tab
+        function fillFormAndSwitch(op, prices, amount = 100) {
+            // Switch to executor tab
+            document.querySelector('.tab-btn[data-tab="executor"]').click();
+            
+            // Fill in the pairs
+            document.getElementById('pair1').value = op.usdtPair;
+            document.getElementById('pair2').value = op.secondPair;
+            document.getElementById('pair3').value = op.thirdPair;
+            
+            // Fill in the prices (top of book)
+            document.getElementById('price1').value = prices[0];
+            document.getElementById('price2').value = prices[1];
+            document.getElementById('price3').value = prices[2];
+            
+            // Set USDT amount
+            document.getElementById('usdtAmount').value = amount;
+            
+            // Update asset flow visualization
+            updateAssetFlow();
+        }
+
+        // Execute an opportunity manually
+        function executeOpportunity(op, prices) {
+            // Check if an arbitrage is already running
+            fetch('/arbitrage_status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.running) {
+                        console.log('Arbitrage is already running. Skipping opportunity.');
+                        return;
+                    }
+                    
+                    fillFormAndSwitch(op, prices);
+                    
+                    // Wait a bit for the form to update and then click the execute button
+                    setTimeout(() => {
+                        document.getElementById('executeBtn').click();
+                    }, 500);
+                });
+        }
+
+        // Executor functions
+        function setupExecutor() {
+            // Elements
+            const balanceContainer = document.getElementById('balanceContainer');
+            const pair1Input = document.getElementById('pair1');
+            const pair2Input = document.getElementById('pair2');
+            const pair3Input = document.getElementById('pair3');
+            const price1Input = document.getElementById('price1');
+            const price2Input = document.getElementById('price2');
+            const price3Input = document.getElementById('price3');
+            const usdtAmountInput = document.getElementById('usdtAmount');
+            const executeBtn = document.getElementById('executeBtn');
+            const logContainer = document.getElementById('logContainer');
+            const stepIndicator = document.getElementById('stepIndicator');
+            const assetFlow = document.getElementById('assetFlow');
+            const controlPanel = document.getElementById('controlPanel');
+            const pauseBtn = document.getElementById('pauseBtn');
+            const resumeBtn = document.getElementById('resumeBtn');
+            const cancelOrderBtn = document.getElementById('cancelOrderBtn');
+            const orderStatusPanel = document.getElementById('orderStatusPanel');
+            const activeOrdersContainer = document.getElementById('activeOrders');
+            
+            // State
+            let currentOrderId = null;
+            
+            // Fetch and display balances
+            function fetchBalances() {
+                fetch('/get_balances')
+                    .then(response => response.json())
+                    .then(data => {
+                        balanceContainer.innerHTML = '';
+                        for (const [asset, balance] of Object.entries(data)) {
+                            const balanceItem = document.createElement('div');
+                            balanceItem.className = 'balance-item';
+                            balanceItem.innerHTML = `
+                                <div class="balance-asset">${asset}</div>
+                                <div class="balance-amount">${parseFloat(balance).toFixed(6)}</div>
+                            `;
+                            balanceContainer.appendChild(balanceItem);
+                        }
+                    });
+            }
+            
+            // Update execution status
+            function updateExecutionStatus() {
+                fetch('/arbitrage_status')
+                    .then(response => response.json())
+                    .then(data => {
+                        // Update step indicator
+                        stepIndicator.textContent = data.current_step || 'Ready to execute';
+                        
+                        // Update logs
+                        logContainer.innerHTML = '';
+                        data.logs.forEach(log => {
+                            const logEntry = document.createElement('div');
+                            logEntry.className = 'log-entry info';
+                            logEntry.textContent = log;
+                            logContainer.appendChild(logEntry);
+                        });
+                        
+                        // Auto-scroll to bottom
+                        logContainer.scrollTop = logContainer.scrollHeight;
+                        
+                        // Update button state
+                        executeBtn.disabled = data.running;
+                        executeBtn.textContent = data.running ? 'Execution in Progress...' : 'Execute Arbitrage';
+                        
+                        // Show/hide control panel
+                        controlPanel.style.display = data.running ? 'block' : 'none';
+                        
+                        // Update pause/resume buttons
+                        if (data.running) {
+                            pauseBtn.style.display = data.paused ? 'none' : 'block';
+                            resumeBtn.style.display = data.paused ? 'block' : 'none';
+                        }
+                        
+                        // Update active orders
+                        updateActiveOrders(data.active_orders);
+                        
+                        // Check if execution completed
+                        if (!data.running && isExecutingTrade) {
+                            isExecutingTrade = false;
+                            console.log('Trade execution completed, ready for next opportunity');
+                        }
+                        
+                        // If execution is running, refresh more frequently
+                        if (data.running) {
+                            setTimeout(updateExecutionStatus, 1000);
+                        }
+                    });
+            }
+            
+            // Update active orders display
+            function updateActiveOrders(orders) {
+                if (Object.keys(orders).length === 0) {
+                    orderStatusPanel.style.display = 'none';
+                    activeOrdersContainer.innerHTML = '';
+                    return;
+                }
+                
+                orderStatusPanel.style.display = 'block';
+                activeOrdersContainer.innerHTML = '';
+                
+                for (const [orderId, orderInfo] of Object.entries(orders)) {
+                    const orderItem = document.createElement('div');
+                    orderItem.className = 'order-item';
+                    
+                    // Get status class
+                    let statusClass = 'status-pending';
+                    if (orderInfo.status === 'PARTIALLY_FILLED') {
+                        statusClass = 'status-partial';
+                    } else if (orderInfo.status === 'FILLED') {
+                        statusClass = 'status-filled';
+                    }
+                    
+                    orderItem.innerHTML = `
+                        <div class="order-header">
+                            <strong>${orderInfo.symbol}</strong>
+                            <span class="order-status ${statusClass}">${orderInfo.status}</span>
+                        </div>
+                        <div>Step: ${orderInfo.step}</div>
+                        <div>Order ID: ${orderId}</div>
+                    `;
+                    
+                    activeOrdersContainer.appendChild(orderItem);
+                    
+                    // Track the most recent order
+                    currentOrderId = orderId;
+                }
+            }
+            
+            // Update asset flow visualization
+            function updateAssetFlow() {
+                const pair1 = pair1Input.value.trim().toUpperCase();
+                const pair2 = pair2Input.value.trim().toUpperCase();
+                const pair3 = pair3Input.value.trim().toUpperCase();
+                
+                if (pair1 && pair2 && pair3) {
+                    try {
+                        const asset1 = pair1.replace('USDT', '');
+                        const asset2 = pair2.split(pair1.replace('USDT', ''))[1] || '';
+                        const asset3 = pair3.replace('USDT', '');
+                        
+                        if (asset1 && asset2 && asset3) {
+                            document.getElementById('asset1').textContent = 'USDT';
+                            document.getElementById('asset2').textContent = asset1;
+                            document.getElementById('asset3').textContent = asset2;
+                            document.getElementById('asset4').textContent = 'USDT';
+                            assetFlow.style.display = 'block';
+                            return;
+                        }
+                    } catch (e) {
+                        // Ignore errors
+                    }
+                }
+                assetFlow.style.display = 'none';
+            }
+            
+            // Execute arbitrage
+            function executeArbitrage() {
+                const pairs = [
+                    pair1Input.value.trim().toUpperCase(),
+                    pair2Input.value.trim().toUpperCase(),
+                    pair3Input.value.trim().toUpperCase()
+                ];
+                
+                const usdtAmount = parseFloat(usdtAmountInput.value);
+                const price1 = parseFloat(price1Input.value);
+                const price2 = parseFloat(price2Input.value);
+                const price3 = parseFloat(price3Input.value);
+                
+                if (pairs.some(p => !p)) {
+                    alert('Please enter all three trading pairs');
+                    return;
+                }
+                
+                if (!usdtAmount || usdtAmount <= 0) {
+                    alert('Please enter a valid USDT amount');
+                    return;
+                }
+                
+                if (!price1 || price1 <= 0 || !price2 || price2 <= 0 || !price3 || price3 <= 0) {
+                    alert('Please enter valid prices for all steps');
+                    return;
+                }
+                
+                // First, validate the opportunity with the server
+                fetch('/validate_opportunity', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        pairs: pairs,
+                        price1: price1,
+                        price2: price2,
+                        price3: price3
+                    })
+                })
+                .then(response => response.json())
+                .then(validation => {
+                    if (!validation.valid) {
+                        alert(`Validation failed: ${validation.message}`);
+                        return;
+                    }
+                    
+                    // Mark as executing trade
+                    isExecutingTrade = true;
+                    
+                    // Now execute
+                    fetch('/execute_arbitrage', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            pairs: pairs,
+                            usdt_amount: usdtAmount,
+                            price1: price1,
+                            price2: price2,
+                            price3: price3
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            // Start monitoring status
+                            updateExecutionStatus();
+                        } else {
+                            alert(data.message);
+                            isExecutingTrade = false;
+                        }
+                    });
+                });
+            }
+            
+            // Pause execution
+            function pauseExecution() {
+                fetch('/pause_arbitrage', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        pause: true
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        pauseBtn.style.display = 'none';
+                        resumeBtn.style.display = 'block';
+                    }
+                });
+            }
+            
+            // Resume execution
+            function resumeExecution() {
+                fetch('/pause_arbitrage', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        pause: false
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        pauseBtn.style.display = 'block';
+                        resumeBtn.style.display = 'none';
+                    }
+                });
+            }
+            
+            // Cancel current order
+            function cancelOrder() {
+                if (!currentOrderId) {
+                    alert('No active order to cancel');
+                    return;
+                }
+                
+                if (!confirm('Are you sure you want to cancel this order?')) {
+                    return;
+                }
+                
+                fetch('/cancel_order', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        order_id: currentOrderId
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert('Order canceled successfully');
+                    } else {
+                        alert('Error canceling order: ' + data.message);
+                    }
+                });
+            }
+            
+            // Event listeners
+            pair1Input.addEventListener('input', updateAssetFlow);
+            pair2Input.addEventListener('input', updateAssetFlow);
+            pair3Input.addEventListener('input', updateAssetFlow);
+            executeBtn.addEventListener('click', executeArbitrage);
+            pauseBtn.addEventListener('click', pauseExecution);
+            resumeBtn.addEventListener('click', resumeExecution);
+            cancelOrderBtn.addEventListener('click', cancelOrder);
+            
+            // Initialize
+            fetchBalances();
+            setInterval(fetchBalances, 5000);  // Update balances every 5 seconds
+            updateExecutionStatus();
+            updateAssetFlow();
+        }
+
+        // Initialize the application when the DOM is loaded
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
